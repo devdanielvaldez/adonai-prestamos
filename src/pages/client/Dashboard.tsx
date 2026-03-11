@@ -37,7 +37,7 @@ export default function ClientDashboard() {
           
           if (data.status === 'aprobado' || data.status === 'desembolsado') {
             active++;
-            totalDebt += data.amount; // Simplified, should calculate remaining balance
+            totalDebt += data.amount; // Simplificado, debería calcular el balance restante
           } else if (data.status === 'pendiente' || data.status === 'analisis') {
             pending++;
           }
@@ -57,7 +57,7 @@ export default function ClientDashboard() {
           }
         });
 
-        // Group payments by month for chart
+        // Agrupar pagos por mes para el gráfico
         const monthlyPayments: Record<string, number> = {};
         payments.forEach(p => {
           if (p.date) {
@@ -69,7 +69,7 @@ export default function ClientDashboard() {
         const chartData = Object.keys(monthlyPayments).map(month => ({
           name: month,
           amount: monthlyPayments[month]
-        })).slice(-6); // Last 6 months
+        })).slice(-6); // Últimos 6 meses
 
         setPaymentData(chartData);
 
@@ -103,71 +103,78 @@ export default function ClientDashboard() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Bienvenido a tu Portal</h2>
+    <div className="space-y-6 md:space-y-8">
+      {/* Cabecera */}
+      <div className="px-1 sm:px-0">
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Bienvenido a tu Portal</h2>
         <p className="text-sm text-slate-500 mt-1">Aquí puedes ver el estado de tus préstamos y obligaciones.</p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Tarjetas de Estadísticas */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.name} className="card-modern p-6 flex items-center space-x-5 hover:shadow-md transition-shadow">
-              <div className={`p-4 rounded-2xl ${stat.bg} ${stat.color}`}>
-                <Icon size={28} strokeWidth={1.5} />
+            <div key={stat.name} className="card-modern p-4 sm:p-6 flex items-center space-x-4 sm:space-x-5 hover:shadow-md transition-shadow bg-white rounded-xl shadow-sm border border-slate-100">
+              <div className={`p-3 sm:p-4 rounded-2xl shrink-0 ${stat.bg} ${stat.color}`}>
+                <Icon size={24} className="sm:w-7 sm:h-7" strokeWidth={1.5} />
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-500 mb-1">{stat.name}</p>
-                <p className="text-2xl font-bold text-slate-900 tracking-tight">{stat.value}</p>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 truncate">{stat.name}</p>
+                <p className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight truncate">{stat.value}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card-modern p-6 lg:col-span-2">
-          <h3 className="text-lg font-bold text-slate-900 mb-6 tracking-tight">Historial de Pagos</h3>
+      {/* Sección Inferior: Gráfico y Lista */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        
+        {/* Gráfico */}
+        <div className="card-modern p-4 sm:p-6 lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100">
+          <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-4 sm:mb-6 tracking-tight">Historial de Pagos</h3>
           {paymentData.length > 0 ? (
-            <div className="h-72">
+            <div className="h-60 sm:h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={paymentData}>
+                <BarChart data={paymentData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `$${value}`} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} tickFormatter={(value) => `$${value}`} />
                   <Tooltip 
                     cursor={{fill: '#f8fafc'}}
                     contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                     formatter={(value: number) => [`$${value.toLocaleString()}`, 'Pagado']}
                   />
-                  <Bar dataKey="amount" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="amount" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={50} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-72 flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 border-dashed">
-              <p className="text-slate-500 font-medium">No hay historial de pagos disponible.</p>
+            <div className="h-60 sm:h-72 flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+              <p className="text-sm sm:text-base text-slate-500 font-medium px-4 text-center">No hay historial de pagos disponible.</p>
             </div>
           )}
         </div>
 
-        <div className="card-modern p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-slate-900 tracking-tight">Préstamos Recientes</h3>
+        {/* Préstamos Recientes */}
+        <div className="card-modern p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center mb-4 sm:mb-6">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Préstamos Recientes</h3>
             <Link to="/client/my-loans" className="text-sm font-medium text-emerald-600 hover:text-emerald-700">Ver todos</Link>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {recentLoans.map(loan => (
-              <div key={loan.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                <div>
-                  <p className="font-semibold text-slate-900">{loan.loanTypeName}</p>
-                  <p className="text-sm text-slate-500">{new Date(loan.createdAt).toLocaleDateString()}</p>
+              <div key={loan.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-2 sm:gap-0">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm sm:text-base text-slate-900 truncate">{loan.loanTypeName}</p>
+                  <p className="text-xs sm:text-sm text-slate-500">{new Date(loan.createdAt).toLocaleDateString()}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-slate-900">${loan.amount.toLocaleString()}</p>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 capitalize
+                {/* Contenedor del monto y estado: en móvil se alinean lado a lado, en escritorio uno arriba del otro a la derecha */}
+                <div className="flex sm:flex-col justify-between sm:justify-center items-center sm:items-end w-full sm:w-auto mt-1 sm:mt-0">
+                  <p className="font-bold text-sm sm:text-base text-slate-900">${loan.amount.toLocaleString()}</p>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium sm:mt-1 capitalize shrink-0
                     ${loan.status === 'aprobado' ? 'bg-emerald-100 text-emerald-800' : 
                       loan.status === 'rechazado' ? 'bg-red-100 text-red-800' : 
                       loan.status === 'desembolsado' ? 'bg-purple-100 text-purple-800' :
@@ -178,12 +185,13 @@ export default function ClientDashboard() {
               </div>
             ))}
             {recentLoans.length === 0 && (
-              <div className="text-center py-8 text-slate-500">
+              <div className="text-center py-8 text-sm text-slate-500">
                 No tienes préstamos recientes.
               </div>
             )}
           </div>
         </div>
+        
       </div>
     </div>
   );
