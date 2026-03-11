@@ -2,9 +2,153 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, auth } from '../../firebase';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc } from 'firebase/firestore';
-import { ArrowLeft, Upload, CheckCircle, Clock, XCircle, FileText, Download, DollarSign, Search } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, Clock, XCircle, FileText, Download, DollarSign, Search, CreditCard, Building, X } from 'lucide-react';
 import { generateLoanDocumentation, generatePaymentReceipt, generateAmortizationPDF } from '../../utils/pdfGenerator';
+import toast, { Toaster } from 'react-hot-toast';
 
+// --- STRIPE INTEGRATION ---
+import { loadStripe } from '@stripe/stripe-js';
+import { PaymentElement, Elements, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePromise = loadStripe("pk_live_51Sv5CZPGb1YVmO0pJuqYrQrKW7TPxE6WyVdJMFeqUzz7NQRzbeXALEUPb0bAdeAhw88p5YjXpFP8t3lXIikNzWHY00QrJOQlAz");
+
+const CheckoutForm = ({ amount, currency, onSuccess, onCancel }: { amount: number, currency: string, onSuccess: () => void, onCancel: () => void }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [message, setMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!stripe || !elements) return;
+
+    setIsLoading(true);
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        // return_url: window.location.origin + "/shipments",
+      },
+      redirect: 'if_required',
+    });
+
+    if (error) {
+      if (error.type === "card_error" || error.type === "validation_error") {
+        setMessage(error.message || "Ocurrió un error");
+        toast.error(error.message || "El pago falló");
+      } else {
+        setMessage("Ocurrió un error inesperado.");
+        toast.error("Ocurrió un error inesperado.");
+      }
+    } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+      toast.success("¡Pago exitoso!");
+      onSuccess();
+    }
+
+    setIsLoading(false);
+  };
+
+  return (
+    <form id="payment-form" onSubmit={handleSubmit} className="space-y-6">
+      <PaymentElement id="payment-element" options={{ layout: "tabs" }} />
+      <div className="flex gap-4 pt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isLoading}
+          className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          disabled={isLoading || !stripe || !elements}
+          id="submit"
+          className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex justify-center items-center"
+        >
+          <span id="button-text">
+            {isLoading ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+              `Pagar $${amount} ${currency.toUpperCase()}`
+            )}
+          </span>
+        </button>
+      </div>
+      {message && <div id="payment-message" className="text-red-500 text-sm text-center">{message}</div>}
+    </form>
+  );
+};
+
+function StripePaymentForm({ amount, currency, onSuccess, onCancel }: { amount: number, currency: string, onSuccess: () => void, onCancel: () => void }) {
+  const [clientSecret, setClientSecret] = useState("");
+
+  useEffect(() => {
+    fetch("https://stripe-server-740546524635.us-central1.run.app/api/create-payment-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount, currency }),
+    })
+      .then((res) => res.json())
+      .then((data) => setClientSecret(data.clientSecret))
+      .catch((err) => {
+        console.error("Error creating payment intent:", err);
+        toast.error("Error al inicializar el sistema de pago.");
+      });
+  }, [amount, currency]);
+
+  const appearance = {
+    theme: 'stripe' as const,
+    variables: {
+      colorPrimary: '#2563eb',
+      colorBackground: '#ffffff',
+      colorText: '#1e293b',
+      colorDanger: '#ef4444',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      spacingUnit: '4px',
+      borderRadius: '12px',
+    },
+  };
+  const options = {
+    clientSecret,
+    appearance,
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+            Pago Seguro con Tarjeta
+          </h4>
+          <button onClick={onCancel} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          {clientSecret ? (
+            <Elements options={options} stripe={stripePromise}>
+              <CheckoutForm amount={amount} currency={currency} onSuccess={onSuccess} onCancel={onCancel} />
+            </Elements>
+          ) : (
+            <div className="flex justify-center p-8">
+              <div className="animate-pulse flex flex-col items-center space-y-4 w-full">
+                <div className="h-4 bg-slate-200 rounded w-1/2 mb-4"></div>
+                <div className="h-12 bg-slate-100 rounded-xl w-full"></div>
+                <div className="h-12 bg-slate-100 rounded-xl w-full"></div>
+                <div className="h-12 bg-slate-100 rounded-xl w-full"></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MAIN COMPONENT ---
 export default function ClientLoanDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -18,13 +162,17 @@ export default function ClientLoanDetails() {
   const [downloading, setDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState<'resumen' | 'amortizacion' | 'pagos' | 'historial' | 'expediente'>('resumen');
   
-  // Payment Registration
+  // Payment Registration State
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'transferencia' | 'tarjeta'>('transferencia');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentImage, setPaymentImage] = useState<string | null>(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [guaranteePhotoBase64, setGuaranteePhotoBase64] = useState<string | null>(null);
+
+  // Stripe Modal State
+  const [showStripeForm, setShowStripeForm] = useState(false);
 
   const handleGuaranteePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -53,19 +201,25 @@ export default function ClientLoanDetails() {
           createdAt: new Date().toISOString()
         });
         
-        // Refresh loan data
         const loanDoc = await getDoc(doc(db, 'loans', id));
         if (loanDoc.exists()) {
           setLoan({ id: loanDoc.id, ...loanDoc.data() } as any);
         }
         
-        alert('Foto de garantía subida exitosamente');
+        toast.success('Foto de garantía subida exitosamente');
       } catch (error) {
         console.error(error);
-        alert('Error al guardar la foto de garantía');
+        toast.error('Error al guardar la foto de garantía');
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const fetchPayments = async () => {
+    if (!id) return;
+    const paymentsQ = query(collection(db, 'payments'), where('loanId', '==', id));
+    const paymentsSnap = await getDocs(paymentsQ);
+    setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
   };
 
   useEffect(() => {
@@ -77,7 +231,6 @@ export default function ClientLoanDetails() {
         
         const loanData = { id: loanDoc.id, ...loanDoc.data() } as any;
         
-        // Security check
         if (loanData.clientId !== auth.currentUser.uid) {
           navigate('/client/my-loans');
           return;
@@ -88,22 +241,17 @@ export default function ClientLoanDetails() {
         const typeDoc = await getDoc(doc(db, 'loanTypes', loanData.loanTypeId));
         if (typeDoc.exists()) setLoanType(typeDoc.data());
 
-        // Fetch payments
-        const paymentsQ = query(collection(db, 'payments'), where('loanId', '==', id));
-        const paymentsSnap = await getDocs(paymentsQ);
-        setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        await fetchPayments();
 
-        // Fetch history
         const historyQ = query(collection(db, 'loanHistory'), where('loanId', '==', id));
         const historySnap = await getDocs(historyQ);
         setHistory(historySnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
 
-        // Calculate Amortization
         calculateAmortization(loanData, typeDoc.exists() ? typeDoc.data() : null);
 
       } catch (error) {
         console.error(error);
-        alert('Error al cargar datos del préstamo');
+        toast.error('Error al cargar datos del préstamo');
       } finally {
         setLoading(false);
       }
@@ -188,10 +336,18 @@ export default function ClientLoanDetails() {
     }
   };
 
-  const submitPayment = async (e: React.FormEvent) => {
+  const submitManualPayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (paymentMethod === 'tarjeta') {
+      if (!paymentAmount || Number(paymentAmount) <= 0) {
+        return toast.error('Ingrese un monto válido');
+      }
+      setShowStripeForm(true);
+      return;
+    }
+
     if (!paymentAmount || !paymentReference || !paymentImage) {
-      return alert('Por favor complete todos los campos y suba el comprobante.');
+      return toast.error('Por favor complete todos los campos y suba el comprobante.');
     }
 
     setSubmittingPayment(true);
@@ -209,22 +365,47 @@ export default function ClientLoanDetails() {
       });
 
       setIsPaymentModalOpen(false);
-      setPaymentAmount('');
-      setPaymentReference('');
-      setPaymentImage(null);
+      resetPaymentForm();
+      await fetchPayments();
       
-      // Refresh payments
-      const paymentsQ = query(collection(db, 'payments'), where('loanId', '==', id));
-      const paymentsSnap = await getDocs(paymentsQ);
-      setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-      
-      alert('Pago registrado exitosamente. Está pendiente de validación por un administrador.');
+      toast.success('Pago registrado. Pendiente de validación por administrador.');
     } catch (error) {
       console.error(error);
-      alert('Error al registrar el pago.');
+      toast.error('Error al registrar el pago.');
     } finally {
       setSubmittingPayment(false);
     }
+  };
+
+  const handleStripeSuccess = async () => {
+    try {
+      await addDoc(collection(db, 'payments'), {
+        loanId: id,
+        clientId: auth.currentUser?.uid,
+        amount: Number(paymentAmount),
+        method: 'tarjeta',
+        reference: 'Procesado vía Stripe',
+        status: 'aprobado', // Auto-approved
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+
+      setShowStripeForm(false);
+      setIsPaymentModalOpen(false);
+      resetPaymentForm();
+      await fetchPayments();
+      
+    } catch (error) {
+      console.error(error);
+      toast.error('El pago se realizó, pero hubo un error al guardarlo en el historial.');
+    }
+  };
+
+  const resetPaymentForm = () => {
+    setPaymentAmount('');
+    setPaymentReference('');
+    setPaymentImage(null);
+    setPaymentMethod('transferencia');
   };
 
   const getStatusBadge = (status: string) => {
@@ -243,7 +424,7 @@ export default function ClientLoanDetails() {
       case 'pendiente': return <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">Pendiente de Validación</span>;
       case 'aprobado': return <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">Aprobado</span>;
       case 'rechazado': return <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">Rechazado</span>;
-      default: return <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">Completado</span>; // Legacy payments
+      default: return <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">Completado</span>;
     }
   };
 
@@ -252,6 +433,7 @@ export default function ClientLoanDetails() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      <Toaster position="top-center" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/client/my-loans')} className="text-slate-500 hover:text-slate-900 transition-colors">
@@ -426,7 +608,12 @@ export default function ClientLoanDetails() {
                         <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{new Date(payment.date).toLocaleDateString()}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-emerald-600">${payment.amount.toLocaleString()}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600 capitalize">{payment.method}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600 capitalize">
+                            <span className="flex items-center gap-1">
+                              {payment.method === 'tarjeta' ? <CreditCard size={14} className="text-blue-500"/> : <Building size={14} className="text-slate-500"/>}
+                              {payment.method}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{payment.reference || 'N/A'}</td>
                           <td className="px-4 py-3 whitespace-nowrap">{getPaymentStatusBadge(payment.status)}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-right">
@@ -485,7 +672,6 @@ export default function ClientLoanDetails() {
               <h3 className="text-lg font-bold text-slate-900 mb-4">Expediente del Préstamo</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Foto de Garantía */}
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 md:col-span-2">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="font-bold text-slate-900 flex items-center">
@@ -534,26 +720,61 @@ export default function ClientLoanDetails() {
       </div>
 
       {/* Payment Modal */}
-      {isPaymentModalOpen && (
+      {isPaymentModalOpen && !showStripeForm && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 sm:p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900 tracking-tight">
                 Registrar Pago
               </h3>
-              <button onClick={() => setIsPaymentModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={() => { setIsPaymentModalOpen(false); resetPaymentForm(); }} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <XCircle size={24} />
               </button>
             </div>
-            <form onSubmit={submitPayment} className="space-y-5">
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Nota:</strong> Solo se aceptan transferencias bancarias. El pago será revisado por un administrador antes de ser aplicado a tu préstamo.
-                </p>
+            
+            <form onSubmit={submitManualPayment} className="space-y-5">
+              
+              {/* Payment Method Selector */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Método de Pago</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('transferencia')}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border ${paymentMethod === 'transferencia' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <Building size={18} />
+                    <span className="text-sm font-medium">Transferencia</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('tarjeta')}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border ${paymentMethod === 'tarjeta' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <CreditCard size={18} />
+                    <span className="text-sm font-medium">Tarjeta</span>
+                  </button>
+                </div>
               </div>
 
+              {paymentMethod === 'transferencia' && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Nota:</strong> El pago por transferencia será revisado por un administrador antes de ser aplicado a tu préstamo.
+                  </p>
+                </div>
+              )}
+
+              {paymentMethod === 'tarjeta' && (
+                 <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100 mb-4">
+                 <p className="text-sm text-emerald-800">
+                   <strong>Pago Automático:</strong> Tu pago será procesado de forma segura y se aplicará inmediatamente a tu préstamo.
+                 </p>
+               </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Monto Transferido ($)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Monto a Pagar ($)</label>
                 <input 
                   type="number" 
                   required 
@@ -566,57 +787,76 @@ export default function ClientLoanDetails() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Número de Referencia</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={paymentReference} 
-                  onChange={e => setPaymentReference(e.target.value)} 
-                  className="input-modern" 
-                  placeholder="Ej: REF-123456789"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Comprobante (Imagen)</label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl hover:border-indigo-500 transition-colors bg-slate-50">
-                  <div className="space-y-1 text-center">
-                    {paymentImage ? (
-                      <div className="flex flex-col items-center">
-                        <img src={paymentImage} alt="Comprobante" className="h-32 object-contain mb-3 rounded" />
-                        <button type="button" onClick={() => setPaymentImage(null)} className="text-sm text-red-600 hover:text-red-800 font-medium">
-                          Quitar imagen
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="mx-auto h-12 w-12 text-slate-400" />
-                        <div className="flex text-sm text-slate-600 justify-center">
-                          <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500 px-2 py-1">
-                            <span>Subir un archivo</span>
-                            <input id="file-upload" name="file-upload" type="file" accept="image/*" className="sr-only" onChange={handleImageUpload} />
-                          </label>
-                        </div>
-                        <p className="text-xs text-slate-500">PNG, JPG, GIF hasta 5MB</p>
-                      </>
-                    )}
+              {paymentMethod === 'transferencia' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Número de Referencia</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={paymentReference} 
+                      onChange={e => setPaymentReference(e.target.value)} 
+                      className="input-modern" 
+                      placeholder="Ej: REF-123456789"
+                    />
                   </div>
-                </div>
-              </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Comprobante (Imagen)</label>
+                    <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl hover:border-indigo-500 transition-colors bg-slate-50">
+                      <div className="space-y-1 text-center">
+                        {paymentImage ? (
+                          <div className="flex flex-col items-center">
+                            <img src={paymentImage} alt="Comprobante" className="h-32 object-contain mb-3 rounded" />
+                            <button type="button" onClick={() => setPaymentImage(null)} className="text-sm text-red-600 hover:text-red-800 font-medium">
+                              Quitar imagen
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <Upload className="mx-auto h-12 w-12 text-slate-400" />
+                            <div className="flex text-sm text-slate-600 justify-center">
+                              <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500 px-2 py-1">
+                                <span>Subir un archivo</span>
+                                <input id="file-upload" name="file-upload" type="file" accept="image/*" className="sr-only" onChange={handleImageUpload} />
+                              </label>
+                            </div>
+                            <p className="text-xs text-slate-500">PNG, JPG, GIF hasta 5MB</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setIsPaymentModalOpen(false)} className="flex-1 btn-secondary">
+                <button type="button" onClick={() => { setIsPaymentModalOpen(false); resetPaymentForm(); }} className="flex-1 btn-secondary">
                   Cancelar
                 </button>
-                <button type="submit" disabled={submittingPayment} className="flex-1 btn-primary bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">
-                  {submittingPayment ? 'Enviando...' : 'Enviar Pago'}
+                <button 
+                  type="submit" 
+                  disabled={submittingPayment} 
+                  className={`flex-1 btn-primary text-white disabled:opacity-50 ${paymentMethod === 'tarjeta' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                >
+                  {submittingPayment ? 'Procesando...' : paymentMethod === 'tarjeta' ? 'Continuar al Pago Seguro' : 'Enviar Pago'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Stripe Modal Overlay */}
+      {showStripeForm && (
+        <StripePaymentForm 
+          amount={Number(paymentAmount)} 
+          currency="usd" // Cambia a "mxn" o la que uses en tu backend si es necesario
+          onSuccess={handleStripeSuccess}
+          onCancel={() => setShowStripeForm(false)}
+        />
+      )}
+
     </div>
   );
 }
